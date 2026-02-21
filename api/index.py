@@ -43,6 +43,9 @@ Columns:
   - id (SERIAL, PRIMARY KEY, auto-increment)
   - name (TEXT, NOT NULL) — the user's full name
   - email (TEXT, NOT NULL, UNIQUE) — the user's email address
+  - age (INTEGER) — the user's age in years
+  - gender (TEXT) — the user's gender (Male, Female, Other)
+  - phone (TEXT) — the user's phone number
   - registered_at (TIMESTAMP, DEFAULT NOW()) — when the user registered
 """.strip()
 
@@ -63,23 +66,33 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
+            age INTEGER,
+            gender TEXT,
+            phone TEXT,
             registered_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    # Add new columns if table already exists (safe migration)
+    for col, col_type in [("age", "INTEGER"), ("gender", "TEXT"), ("phone", "TEXT")]:
+        try:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except Exception:
+            conn.rollback()
     conn.commit()
     cur.close()
     conn.close()
     logger.info("[DB] Supabase PostgreSQL ready")
 
 
-def db_insert_user(name: str, email: str) -> dict:
+def db_insert_user(name: str, email: str, age: int = None, gender: str = None, phone: str = None) -> dict:
     """Insert a new user."""
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO users (name, email) VALUES (%s, %s) RETURNING id, name, email, registered_at",
-            (name, email)
+            "INSERT INTO users (name, email, age, gender, phone) VALUES (%s, %s, %s, %s, %s) RETURNING id, name, email, age, gender, phone, registered_at",
+            (name, email, age, gender, phone)
         )
         user = dict(cur.fetchone())
         # Convert datetime to string for JSON serialization
@@ -240,10 +253,10 @@ def fallback_generate_sql(question: str) -> str:
 
     if any(kw in q for kw in ["list", "show", "display", "get all", "all user", "sab", "tous", "sabhi"]):
         if any(kw in q for kw in ["user", "member", "people", "person", "registered"]):
-            return "SELECT id, name, email, registered_at FROM users ORDER BY registered_at DESC LIMIT 50"
+            return "SELECT id, name, email, age, gender, phone, registered_at FROM users ORDER BY registered_at DESC LIMIT 50"
 
     if any(kw in q for kw in ["user", "member", "data", "database", "record", "registration"]):
-        return "SELECT id, name, email, registered_at FROM users ORDER BY registered_at DESC LIMIT 10"
+        return "SELECT id, name, email, age, gender, phone, registered_at FROM users ORDER BY registered_at DESC LIMIT 10"
 
     return ""
 
@@ -262,11 +275,22 @@ def format_answer(question: str, results: list) -> str:
 
     if len(results) == 1:
         u = results[0]
-        return f"**{u.get('name', '?')}** (Email: {u.get('email', '?')}) — registered on {u.get('registered_at', '?')}."
+        parts = [f"**{u.get('name', '?')}** (Email: {u.get('email', '?')})"]
+        if u.get('age'): parts.append(f"Age: {u['age']}")
+        if u.get('gender'): parts.append(f"Gender: {u['gender']}")
+        if u.get('phone'): parts.append(f"Phone: {u['phone']}")
+        parts.append(f"Registered: {u.get('registered_at', '?')}")
+        return " — ".join(parts)
 
     lines = []
     for i, u in enumerate(results, 1):
-        lines.append(f"{i}. **{u.get('name', '?')}** — {u.get('email', '?')} (Registered: {u.get('registered_at', '?')})")
+        info = f"{i}. **{u.get('name', '?')}** — {u.get('email', '?')}"
+        extras = []
+        if u.get('age'): extras.append(f"Age: {u['age']}")
+        if u.get('gender'): extras.append(f"{u['gender']}")
+        if u.get('phone'): extras.append(f"Ph: {u['phone']}")
+        if extras: info += f" ({', '.join(extras)})"
+        lines.append(info)
     return f"Found **{len(results)}** users:\n" + "\n".join(lines)
 
 
@@ -280,6 +304,9 @@ app = FastAPI(title="AI Database Chatbot", version="3.0.0")
 class RegisterRequest(BaseModel):
     name: str
     email: str
+    age: int = None
+    gender: str = None
+    phone: str = None
 
 
 class ChatRequest(BaseModel):
@@ -326,7 +353,13 @@ def register(req: RegisterRequest):
     if not req.email or "@" not in req.email:
         raise HTTPException(400, "Valid email is required.")
 
-    result = db_insert_user(req.name.strip(), req.email.strip().lower())
+    result = db_insert_user(
+        name=req.name.strip(),
+        email=req.email.strip().lower(),
+        age=req.age,
+        gender=req.gender.strip() if req.gender else None,
+        phone=req.phone.strip() if req.phone else None
+    )
     if result["success"]:
         return {
             "success": True,
