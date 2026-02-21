@@ -353,6 +353,12 @@ def register(req: RegisterRequest):
     if not req.email or "@" not in req.email:
         raise HTTPException(400, "Valid email is required.")
 
+    # Ensure table + columns exist
+    try:
+        init_db()
+    except Exception as e:
+        logger.error(f"[DB] init_db failed: {e}")
+
     result = db_insert_user(
         name=req.name.strip(),
         email=req.email.strip().lower(),
@@ -368,6 +374,25 @@ def register(req: RegisterRequest):
         }
     else:
         raise HTTPException(409, result["error"])
+
+
+@app.get("/api/debug")
+def debug():
+    """Debug endpoint to test DB connection."""
+    info = {"database_url_set": bool(DATABASE_URL), "gemini_key_set": bool(GEMINI_API_KEY)}
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position")
+        info["columns"] = [{"name": r["column_name"], "type": r["data_type"]} for r in cur.fetchall()]
+        cur.execute("SELECT COUNT(*) as cnt FROM users")
+        info["user_count"] = cur.fetchone()["cnt"]
+        cur.close()
+        conn.close()
+        info["db_connection"] = "OK"
+    except Exception as e:
+        info["db_error"] = str(e)
+    return info
 
 
 @app.post("/api/chat")
