@@ -664,7 +664,7 @@
                 </div>
                 <div class="form-group">
                     <label>Phone Number</label>
-                    <input type="tel" id="regPhone" placeholder="e.g., +91 9876543210">
+                    <input type="tel" id="regPhone" placeholder="e.g., 9876543210" maxlength="10" pattern="[0-9]{10}">
                 </div>
                 <button class="btn-register" id="btnRegister" onclick="registerUser()">Register User</button>
                 <div class="register-msg" id="registerMsg"></div>
@@ -695,6 +695,12 @@
 
             if (!name || !email) {
                 msgEl.textContent = 'Name and Email are required.';
+                msgEl.className = 'register-msg error';
+                return;
+            }
+
+            if (phone && phone.replace(/\D/g, '').length !== 10) {
+                msgEl.textContent = 'Phone number must be exactly 10 digits.';
                 msgEl.className = 'register-msg error';
                 return;
             }

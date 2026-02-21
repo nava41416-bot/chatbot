@@ -352,6 +352,10 @@ def register(req: RegisterRequest):
         raise HTTPException(400, "Name is required.")
     if not req.email or "@" not in req.email:
         raise HTTPException(400, "Valid email is required.")
+    if req.phone:
+        digits = re.sub(r'\D', '', req.phone)
+        if len(digits) != 10:
+            raise HTTPException(400, "Phone number must be exactly 10 digits.")
 
     # Ensure table + columns exist
     try:
