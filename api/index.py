@@ -75,12 +75,13 @@ def get_connection():
     # Use individual params if available (avoids URL encoding issues with special chars)
     if DB_HOST and DB_USER and DB_PASSWORD:
         return psycopg2.connect(
-            host=DB_HOST,
+            host=DB_HOST.strip(),
             port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            dbname=DB_NAME,
+            user=DB_USER.strip(),
+            password=DB_PASSWORD.strip(),
+            dbname=DB_NAME.strip(),
             sslmode='require',
+            connect_timeout=10,
             cursor_factory=RealDictCursor
         )
     # Fall back to DATABASE_URL
@@ -425,7 +426,15 @@ def register(req: RegisterRequest):
 @app.get("/api/debug")
 def debug():
     """Debug endpoint to test DB connection."""
-    info = {"database_url_set": bool(DATABASE_URL), "gemini_key_set": bool(GEMINI_API_KEY)}
+    info = {
+        "database_url_set": bool(DATABASE_URL),
+        "gemini_key_set": bool(GEMINI_API_KEY),
+        "db_host_len": len(DB_HOST),
+        "db_user_len": len(DB_USER),
+        "db_password_len": len(DB_PASSWORD),
+        "db_host_stripped": DB_HOST.strip(),
+        "db_user_stripped": DB_USER.strip(),
+    }
     # Show parsed URL components (masks password) for debugging
     if DATABASE_URL:
         try:
