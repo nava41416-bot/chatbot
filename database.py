@@ -25,26 +25,35 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             email TEXT NOT NULL UNIQUE,
+            age INTEGER,
+            gender TEXT,
+            phone TEXT,
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Safe migration: add columns if table already exists without them
+    for col, col_type in [("age", "INTEGER"), ("gender", "TEXT"), ("phone", "TEXT")]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+        except Exception:
+            pass  # Column already exists
     conn.commit()
     conn.close()
     print(f"[DB] Database initialized at {DB_PATH}")
 
 
-def register_user(name: str, email: str) -> dict:
+def register_user(name: str, email: str, age: int = None, gender: str = None, phone: str = None) -> dict:
     """Insert a new user into the database."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO users (name, email) VALUES (?, ?)",
-            (name, email)
+            "INSERT INTO users (name, email, age, gender, phone) VALUES (?, ?, ?, ?, ?)",
+            (name, email, age, gender, phone)
         )
         conn.commit()
         user_id = cursor.lastrowid
-        return {"success": True, "id": user_id, "name": name, "email": email}
+        return {"success": True, "id": user_id, "name": name, "email": email, "age": age, "gender": gender, "phone": phone}
     except sqlite3.IntegrityError:
         return {"success": False, "error": f"Email '{email}' is already registered."}
     finally:
@@ -73,5 +82,8 @@ Columns:
   - id (INTEGER, PRIMARY KEY, AUTO INCREMENT)
   - name (TEXT, NOT NULL) — the user's full name
   - email (TEXT, NOT NULL, UNIQUE) — the user's email address
+  - age (INTEGER) — the user's age in years
+  - gender (TEXT) — the user's gender (Male, Female, Other)
+  - phone (TEXT) — the user's phone number
   - registered_at (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP) — when the user registered
 """.strip()

@@ -9,6 +9,7 @@ import re
 import json
 import logging
 from datetime import datetime
+from urllib.parse import urlparse, unquote
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -26,8 +27,27 @@ DetectorFactory.seed = 0
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("chatbot")
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+# Build DATABASE_URL from individual env vars (as set in Vercel) or use direct DATABASE_URL
+_db_url = os.environ.get("DATABASE_URL", "")
+if not _db_url:
+    _host = os.environ.get("DB_HOST", "")
+    _user = os.environ.get("DB_USER", "")
+    _password = os.environ.get("DB_PASSWORD", "")
+    _port = os.environ.get("DB_PORT", "5432")
+    _name = os.environ.get("DB_NAME", "postgres")
+    if _host and _user and _password:
+        import urllib.parse
+        _password_encoded = urllib.parse.quote_plus(_password)
+        _db_url = f"postgresql://{_user}:{_password_encoded}@{_host}:{_port}/{_name}"
+DATABASE_URL = _db_url
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Individual DB params (preferred — avoids URL encoding issues with special chars in password)
+DB_HOST = os.environ.get("DB_HOST", "").strip()
+DB_USER = os.environ.get("DB_USER", "").strip()
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "").strip()
+DB_PORT = int(os.environ.get("DB_PORT", "6543").strip())
+DB_NAME = os.environ.get("DB_NAME", "postgres").strip()
 
 # Configure Gemini AI
 if GEMINI_API_KEY:
@@ -51,10 +71,32 @@ Columns:
 
 
 def get_connection():
-    """Get Supabase PostgreSQL connection."""
+    """Get Supabase PostgreSQL connection. Prefers individual DB_* vars over DATABASE_URL."""
+    # Use individual params if available (avoids URL encoding issues with special chars)
+    if DB_HOST and DB_USER and DB_PASSWORD:
+        return psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            dbname=DB_NAME,
+            sslmode='require',
+            cursor_factory=RealDictCursor
+        )
+    # Fall back to DATABASE_URL
     if not DATABASE_URL:
-        raise Exception("DATABASE_URL not set. Please configure Supabase connection.")
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        raise Exception("No DB credentials set. Configure DB_HOST/DB_USER/DB_PASSWORD or DATABASE_URL.")
+    parsed = urlparse(DATABASE_URL)
+    user = unquote(parsed.username) if parsed.username else None
+    password = unquote(parsed.password) if parsed.password else None
+    host = parsed.hostname
+    port = parsed.port or 5432
+    dbname = parsed.path.lstrip('/') if parsed.path else 'postgres'
+    return psycopg2.connect(
+        host=host, port=port, user=user, password=password,
+        dbname=dbname, sslmode='require', cursor_factory=RealDictCursor
+    )
+
 
 
 def init_db():
@@ -384,6 +426,15 @@ def register(req: RegisterRequest):
 def debug():
     """Debug endpoint to test DB connection."""
     info = {"database_url_set": bool(DATABASE_URL), "gemini_key_set": bool(GEMINI_API_KEY)}
+    # Show parsed URL components (masks password) for debugging
+    if DATABASE_URL:
+        try:
+            parsed = urlparse(DATABASE_URL)
+            info["parsed_user"] = unquote(parsed.username) if parsed.username else None
+            info["parsed_host"] = parsed.hostname
+            info["parsed_port"] = parsed.port
+        except Exception as pe:
+            info["url_parse_error"] = str(pe)
     try:
         conn = get_connection()
         cur = conn.cursor()

@@ -36,6 +36,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class RegisterRequest(BaseModel):
     name: str
     email: str
+    age: int = None
+    gender: str = None
+    phone: str = None
 
 class ChatRequest(BaseModel):
     message: str
@@ -57,13 +60,13 @@ def serve_ui():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health_check():
     """Health check endpoint."""
     return {"status": "ok", "message": "AI Database Chatbot is running (offline, no API keys)."}
 
 
-@app.post("/register")
+@app.post("/api/register")
 def register(req: RegisterRequest):
     """Register a new user in the database."""
     if not req.name or not req.name.strip():
@@ -73,7 +76,13 @@ def register(req: RegisterRequest):
     if "@" not in req.email:
         raise HTTPException(status_code=400, detail="Invalid email address.")
 
-    result = register_user(req.name.strip(), req.email.strip().lower())
+    result = register_user(
+        name=req.name.strip(),
+        email=req.email.strip().lower(),
+        age=req.age,
+        gender=req.gender.strip() if req.gender else None,
+        phone=req.phone.strip() if req.phone else None
+    )
 
     if result["success"]:
         logger.info(f"[REGISTER] New user: {result['name']} ({result['email']})")
@@ -86,7 +95,7 @@ def register(req: RegisterRequest):
         raise HTTPException(status_code=409, detail=result["error"])
 
 
-@app.post("/chat")
+@app.post("/api/chat")
 def chat(req: ChatRequest):
     """Process a natural language question about the database."""
     if not req.message or not req.message.strip():
