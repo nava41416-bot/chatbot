@@ -1,4 +1,7 @@
 fastapi
-psycopg2-binary
+uvicorn
+pymongo[srv]
 langdetect
 google-generativeai
+python-multipart
+pydantic
