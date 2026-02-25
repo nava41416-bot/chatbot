@@ -433,39 +433,48 @@ def register(req: RegisterRequest):
 @app.get("/api/debug")
 def debug():
     """Debug endpoint to test DB connection."""
+    import traceback
     info = {
         "database_url_set": bool(DATABASE_URL),
         "gemini_key_set": bool(GEMINI_API_KEY),
-        "db_host_len": len(DB_HOST),
-        "db_user_len": len(DB_USER),
-        "db_password_len": len(DB_PASSWORD),
-        "database_url_start": DATABASE_URL[:15] + "..." if DATABASE_URL else "",
+        "db_host_env": DB_HOST,
+        "db_port_env": DB_PORT,
+        "database_url_preview": (DATABASE_URL[:25] + "...") if DATABASE_URL else "",
     }
-    # Show parsed URL components (masks password) for debugging
+    
     if DATABASE_URL:
         try:
             parsed = urlparse(DATABASE_URL)
-            info["parsed_scheme"] = parsed.scheme
-            info["parsed_user"] = unquote(parsed.username) if parsed.username else None
-            info["parsed_host"] = parsed.hostname
-            info["parsed_port"] = parsed.port
-            info["parsed_path"] = parsed.path
+            info["parsed"] = {
+                "scheme": parsed.scheme,
+                "user": parsed.username,
+                "host": parsed.hostname,
+                "port": parsed.port,
+                "path": parsed.path
+            }
+            if parsed.password and "@" in parsed.password:
+                info["password_warning"] = "Your password contains an '@' symbol which may be breaking the connection URL. Use %40 instead."
         except Exception as pe:
             info["url_parse_error"] = str(pe)
+
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position")
-        info["columns"] = [{"name": r["column_name"], "type": r["data_type"]} for r in cur.fetchall()]
-        cur.execute("SELECT COUNT(*) as cnt FROM users")
-        info["user_count"] = cur.fetchone()["cnt"]
+        cur.execute("SELECT current_user, current_database()")
+        db_info = cur.fetchone()
+        info["db_session"] = {"user": db_info[0], "db": db_info[1]}
+        
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+        info["table_columns"] = [r[0] for r in cur.fetchall()]
+        
         cur.close()
         conn.close()
-        info["db_connection"] = "OK"
+        info["db_status"] = "Connected successfully!"
     except Exception as e:
-        import traceback
-        info["db_error"] = str(e)
-        info["db_traceback"] = traceback.format_exc()
+        info["db_status"] = "Connection Failed"
+        info["error_message"] = str(e)
+        info["traceback"] = traceback.format_exc()
+        
     return info
 
 
