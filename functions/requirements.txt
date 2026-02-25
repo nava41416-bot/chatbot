@@ -1,0 +1,7 @@
+firebase-functions
+firebase-admin
+langdetect
+google-generativeai
+fastapi
+mangum
+flask
