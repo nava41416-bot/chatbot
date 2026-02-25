@@ -28,25 +28,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message
 logger = logging.getLogger("chatbot")
 
 # Build DATABASE_URL from individual env vars (as set in Vercel) or use direct DATABASE_URL
-_db_url = os.environ.get("DATABASE_URL", "")
+_db_url = os.environ.get("DATABASE_URL", "").strip()
 if not _db_url:
-    _host = os.environ.get("DB_HOST", "")
-    _user = os.environ.get("DB_USER", "")
-    _password = os.environ.get("DB_PASSWORD", "")
-    _port = os.environ.get("DB_PORT", "5432")
-    _name = os.environ.get("DB_NAME", "postgres")
+    _host = os.environ.get("DB_HOST", "").strip()
+    _user = os.environ.get("DB_USER", "").strip()
+    _password = os.environ.get("DB_PASSWORD", "").strip()
+    _port = os.environ.get("DB_PORT", "6543").strip()
+    _name = os.environ.get("DB_NAME", "postgres").strip()
     if _host and _user and _password:
         import urllib.parse
         _password_encoded = urllib.parse.quote_plus(_password)
         _db_url = f"postgresql://{_user}:{_password_encoded}@{_host}:{_port}/{_name}"
 DATABASE_URL = _db_url
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # Individual DB params (preferred — avoids URL encoding issues with special chars in password)
 DB_HOST = os.environ.get("DB_HOST", "").strip()
 DB_USER = os.environ.get("DB_USER", "").strip()
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "").strip()
-DB_PORT = int(os.environ.get("DB_PORT", "6543").strip())
+DB_PORT_STR = os.environ.get("DB_PORT", "6543").strip()
+DB_PORT = int(DB_PORT_STR) if DB_PORT_STR.isdigit() else 6543
 DB_NAME = os.environ.get("DB_NAME", "postgres").strip()
 
 # Configure Gemini AI
@@ -75,11 +76,11 @@ def get_connection():
     # Use individual params if available (avoids URL encoding issues with special chars)
     if DB_HOST and DB_USER and DB_PASSWORD:
         return psycopg2.connect(
-            host=DB_HOST.strip(),
+            host=DB_HOST,
             port=DB_PORT,
-            user=DB_USER.strip(),
-            password=DB_PASSWORD.strip(),
-            dbname=DB_NAME.strip(),
+            user=DB_USER,
+            password=DB_PASSWORD,
+            dbname=DB_NAME,
             sslmode='require',
             connect_timeout=10,
             cursor_factory=RealDictCursor
@@ -87,16 +88,22 @@ def get_connection():
     # Fall back to DATABASE_URL
     if not DATABASE_URL:
         raise Exception("No DB credentials set. Configure DB_HOST/DB_USER/DB_PASSWORD or DATABASE_URL.")
-    parsed = urlparse(DATABASE_URL)
-    user = unquote(parsed.username) if parsed.username else None
-    password = unquote(parsed.password) if parsed.password else None
-    host = parsed.hostname
-    port = parsed.port or 5432
-    dbname = parsed.path.lstrip('/') if parsed.path else 'postgres'
-    return psycopg2.connect(
-        host=host, port=port, user=user, password=password,
-        dbname=dbname, sslmode='require', cursor_factory=RealDictCursor
-    )
+    
+    # Try direct connection string first (psycopg2 handles URIs natively)
+    try:
+        return psycopg2.connect(DATABASE_URL, sslmode='require', cursor_factory=RealDictCursor)
+    except Exception as e:
+        logger.warning(f"[DB] Direct connection failed, trying manual parse: {e}")
+        parsed = urlparse(DATABASE_URL)
+        user = unquote(parsed.username) if parsed.username else None
+        password = unquote(parsed.password) if parsed.password else None
+        host = parsed.hostname
+        port = parsed.port or 5432
+        dbname = parsed.path.lstrip('/') if parsed.path else 'postgres'
+        return psycopg2.connect(
+            host=host, port=port, user=user, password=password,
+            dbname=dbname, sslmode='require', cursor_factory=RealDictCursor
+        )
 
 
 
@@ -432,16 +439,17 @@ def debug():
         "db_host_len": len(DB_HOST),
         "db_user_len": len(DB_USER),
         "db_password_len": len(DB_PASSWORD),
-        "db_host_stripped": DB_HOST.strip(),
-        "db_user_stripped": DB_USER.strip(),
+        "database_url_start": DATABASE_URL[:15] + "..." if DATABASE_URL else "",
     }
     # Show parsed URL components (masks password) for debugging
     if DATABASE_URL:
         try:
             parsed = urlparse(DATABASE_URL)
+            info["parsed_scheme"] = parsed.scheme
             info["parsed_user"] = unquote(parsed.username) if parsed.username else None
             info["parsed_host"] = parsed.hostname
             info["parsed_port"] = parsed.port
+            info["parsed_path"] = parsed.path
         except Exception as pe:
             info["url_parse_error"] = str(pe)
     try:
@@ -455,7 +463,9 @@ def debug():
         conn.close()
         info["db_connection"] = "OK"
     except Exception as e:
+        import traceback
         info["db_error"] = str(e)
+        info["db_traceback"] = traceback.format_exc()
     return info
 
 
