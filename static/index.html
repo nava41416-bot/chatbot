@@ -829,6 +829,29 @@
         // Focus input on load
         window.addEventListener('load', () => document.getElementById('chatInput').focus());
     </script>
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-analytics.js";
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkBJbFQzBGu53X9LHZdXDPX8siVPDwrbU",
+            authDomain: "chat-bot-d7762.firebaseapp.com",
+            projectId: "chat-bot-d7762",
+            storageBucket: "chat-bot-d7762.firebasestorage.app",
+            messagingSenderId: "338122261358",
+            appId: "1:338122261358:web:8f4a687376bc04e867377f",
+            measurementId: "G-1CYBWNX9K7"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+    </script>
 </body>
 
 </html>
